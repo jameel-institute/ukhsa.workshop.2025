@@ -8,8 +8,8 @@ format:
 
 ```{r setup, include=FALSE}
 # install dev versions of packages
-# pak::pak("jameel-institute/daedalus@develop")
-# pak::pak("jameel-institute/daedalus.compare@develop")
+# pak::pak("jameel-institute/daedalus.compare")
+# pak::pak("jameel-institute/daedalus@jidea-281")
 library(daedalus)
 library(daedalus.compare)
 
@@ -95,7 +95,7 @@ disease_tags <- glue::glue("sample_{seq_along(disease_list)}")
 # choose response
 # simulate business and school closures but with schools open
 # NOTE: THIS IS AN EXAMPLE, MODIFY THIS CODE TO RUN RESULTS
-response <- daedalus::closure_data$elimination
+response <- daedalus.data::closure_data$elimination
 i_EDUCATION_SECTOR <- 41L
 response[i_EDUCATION_SECTOR] <- 1.0
 ```
@@ -105,7 +105,7 @@ response[i_EDUCATION_SECTOR] <- 1.0
 horizon <- 120L
 # NOTE: RESPONSE START AND END TIMES
 response_start <- 45 # this can change based on participants' choice
-response_end <- 120 # this should be fixed for Step 3
+response_duration <- 60 # this should be fixed for Step 3
 ```
 
 ```{r echo=FALSE, include=FALSE}
@@ -116,10 +116,10 @@ hosp_capacity <- gbr$hospital_capacity
 output <- run_scenarios(
   "GBR",
   disease_list,
-  response = list("none", response),
-  response_time_start = response_start,
-  response_time_end = response_end,
-  duration = horizon
+  response_strategy = list("none", response),
+  response_time = response_start,
+  response_duration = response_duration,
+  time_end = horizon
 )
 ```
 
@@ -192,7 +192,7 @@ plots_epi_curves <- Map(
       # red area for response active
       annotate(
         geom = "rect",
-        xmin = response_start, xmax = response_end,
+        xmin = response_start, xmax = response_start + response_duration,
         ymin = 0, ymax = Inf,
         fill = "steelblue", alpha = 0.2
       ) +
@@ -481,9 +481,9 @@ output <- run_scenarios(
   "GBR",
   disease_list,
   response = list("none", response),
-  response_time_start = response_start,
-  response_time_end = response_end,
-  duration = horizon
+  response_time = response_start,
+  response_duration = response_end - response_start,
+  time_end = horizon
 )
 ```
 
