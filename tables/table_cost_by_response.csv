@@ -1,0 +1,13 @@
+response,domain,pctl_50,pctl_25,pctl_75
+unmitigated,economic,1971,282,8652
+unmitigated,education,0,0,0
+unmitigated,life_value,21565,3011,125774
+school_closures,economic,17297,16100,23162
+school_closures,education,40620,40620,40620
+school_closures,life_value,15519,2168,104719
+business_closures,economic,6183,4623,12708
+business_closures,education,0,0,0
+business_closures,life_value,19960,2784,121051
+S+B closures,economic,55833,55395,59200
+S+B closures,education,40620,40620,40620
+S+B closures,life_value,6211,906,55643

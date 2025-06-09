@@ -1,0 +1,17 @@
+response,age_group,pctl_50,pctl_25,pctl_75
+unmitigated,0-4,22,3,97
+unmitigated,20-64,6844,950,41652
+unmitigated,5-19,1979,280,10370
+unmitigated,65+,864,118,6035
+school_closures,0-4,17,2,88
+school_closures,20-64,4803,668,33734
+school_closures,5-19,1494,211,9165
+school_closures,65+,632,87,4973
+business_closures,0-4,21,3,95
+business_closures,20-64,6299,874,39889
+business_closures,5-19,1853,261,10097
+business_closures,65+,803,110,5786
+S+B closures,0-4,8,1,58
+S+B closures,20-64,1769,258,16462
+S+B closures,5-19,685,100,5752
+S+B closures,65+,267,39,2611

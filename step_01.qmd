@@ -9,7 +9,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 # install dev versions of packages
-# pak::pak("jameel-institute/daedalus@develop")
+# pak::pak("jameel-institute/daedalus")
 # pak::pak("jameel-institute/daedalus.compare@develop")
 library(daedalus)
 library(daedalus.compare)
@@ -51,7 +51,7 @@ r0_samples <- withr::with_seed(
   1, rbeta(100, 2, 5)
 ) * r0 + 1.0
 r0_samples <- round(r0_samples, 4)
-r0_samples <- scales::rescale(r0_samples, c(1.2, 2.1))
+r0_samples <- scales::rescale(r0_samples, c(1.0, 2))
 r0_samples <- sort(r0_samples)
 ```
 
@@ -66,33 +66,63 @@ r0_summary <- c(
 r0_summary <- round(r0_summary, 3)
 ```
 
+### Severity profile
+
 ```{r echo=FALSE, include=FALSE}
-# varying hosp risk
-omega <- get_data(disease_x, "omega")
-omega_profile <- omega / mean(omega)
+# draw mortality profile so working and school age worst affected
+severity_profile <- c(0.2, 1.5, 2, 1.5)
+
+# varying mort risk
+eta <- get_data(disease_x, "eta")
+
+# check hosp profile
+eta / mean(eta)
+
 # draw eta samples
-omega_samples <- withr::with_seed(
+eta_samples <- withr::with_seed(
   1, rbeta(100, 2, 5)
-) * mean(omega) + mean(omega) / 2
+) * mean(eta) + mean(eta) / 2
+
+
+# get mean mortality|hosp and scale as well
+omega <- get_data(disease_x, "omega")
+omega <- mean(omega) * 1.5
+
+# bump up 65+ recovery
+gamma_H <- get_data(disease_x, "gamma_H")
+gamma_H[4] <- mean(gamma_H)
+gamma_H[3] <- gamma_H[3] * 0.8
 ```
 
 ```{r echo=FALSE, include=FALSE}
 # make list of infection objects
 disease_list <- Map(
-  r0_samples, omega_samples,
+  r0_samples, eta_samples,
   f = function(x, y) {
     daedalus_infection(
       "influenza_2009",
       r0 = x,
-      omega = y * omega_profile
+      eta = y * severity_profile,
+      omega = omega * severity_profile,
+      gamma_H = gamma_H
     )
   }
 )
 disease_tags <- glue::glue("sample_{seq_along(disease_list)}")
 ```
 
+### Epidemic reporting multiples
+
 ```{r}
-response_levels <- rev(names(daedalus::closure_data))
+case_reporting <- 0.1 # 10% infections reported as cases
+hosp_reporting <- 1.0 # 100% hosps assumed/reported to be epidemic
+death_reporting <- 0.95 # 95% deaths reported as epidemic deaths
+```
+
+### Response options
+
+```{r}
+response_levels <- rev(names(daedalus.data::closure_data))
 ```
 
 ```{r}
@@ -112,8 +142,10 @@ output <- run_scenarios(
     "none", "school_closures",
     "economic_closures", "elimination"
   ),
-  response_time_start = day_now + 1, response_time_end = horizon,
-  duration = horizon
+  response_time = day_now + 1,
+  response_duration = horizon - day_now,
+  time_end = horizon,
+  initial_state_manual = list(p_infectious = 1 / 70e6)
 )
 ```
 
@@ -125,11 +157,23 @@ data_epi_curve <- mutate(
   response = forcats::fct_relevel(response, response_levels)
 )
 
+# get reported values
+data_epi_curve <- mutate(
+  data_epi_curve,
+  reporting_rate = case_when(
+    measure == "daily_deaths" ~ death_reporting,
+    measure == "daily_infections" ~ case_reporting,
+    measure == "daily_hospitalisations" ~ hosp_reporting,
+    measure == "total_hosp" ~ hosp_reporting
+  ),
+  reported_value = value * reporting_rate
+)
+
 data_epi_curve_summary <- group_by(
   data_epi_curve, time, response, measure
 ) %>%
   curve_interval(
-    value,
+    value, reported_value,
     .width = c(0.5, 0.95)
   )
 ```
@@ -146,6 +190,17 @@ data_epi_summary <- mutate(
   data_epi_summary,
   response = forcats::fct_relevel(response, response_levels)
 )
+
+# get reported values
+data_epi_summary <- mutate(
+  data_epi_summary,
+  reporting_rate = case_when(
+    measure == "total_deaths" ~ death_reporting,
+    measure == "epidemic_size" ~ case_reporting,
+    measure == "total_hospitalisations" ~ hosp_reporting
+  ),
+  reported_value = value * reporting_rate
+)
 ```
 
 ```{r echo=FALSE, include=FALSE}
@@ -155,8 +210,36 @@ data_deaths <- get_summary_data(
 )
 data_deaths <- mutate(
   data_deaths,
-  response = forcats::fct_relevel(response, response_levels)
+  response = forcats::fct_relevel(response, response_levels),
+  reported_value = value * death_reporting
 )
+
+# get naive cfr
+data_cfr <- get_summary_data(
+  output, disease_tags,
+  format = "long", measures = c("infections", "deaths"),
+  groups = "age_group"
+)
+data_cfr <- mutate(
+  data_cfr,
+  response = forcats::fct_relevel(response, response_levels),
+  reporting_rate = case_when(
+    measure == "total_deaths" ~ death_reporting,
+    measure == "epidemic_size" ~ case_reporting
+  ),
+  reported_value = value * reporting_rate
+)
+
+data_cfr <-
+  data_cfr %>%
+  select(response, age_group, measure, reported_value, tag) %>%
+  pivot_wider(
+    id_cols = c("response", "age_group", "tag"), names_from = "measure",
+    values_from = "reported_value"
+  ) %>%
+  mutate(
+    cfr = total_deaths / epidemic_size
+  )
 ```
 
 ```{r}
@@ -166,6 +249,7 @@ data_deaths_unmit <- filter(data_deaths, response == "none")
 ```{r echo=FALSE, include=FALSE}
 data_cost_output <- get_cost_data(output, disease_tags, format = "long") %>%
   filter(domain != "life_years")
+
 data_cost_output <- mutate(
   data_cost_output,
   response = forcats::fct_relevel(response, response_levels)
@@ -220,11 +304,12 @@ curve_measure_labels <- c(
 ### Daily infections: Explainer
 
 ```{r}
-plot_daily_infections_unmit_explainer <- ggplot() +
+plot_daily_cases_unmit_explainer <-
+  ggplot() +
   geom_line(
     data = data_epi_curve %>%
       filter(measure == "daily_infections", response == "none"),
-    aes(time, value, group = tag),
+    aes(time, reported_value, group = tag),
     alpha = 0.8
   ) +
   geom_vline(
@@ -256,7 +341,9 @@ ggsave(
 ```
 
 ```{r}
-plot_daily_infections_unmit <- ggplot() +
+# this is the true infections
+plot_daily_infections_unmit <-
+  ggplot() +
   geom_line(
     data = data_epi_curve %>%
       filter(measure == "daily_infections", response == "none"),
@@ -266,7 +353,7 @@ plot_daily_infections_unmit <- ggplot() +
   geom_lineribbon(
     data = data_epi_curve_summary_unmit %>%
       filter(measure == "daily_infections"),
-    aes(time, value, ymin = .lower, ymax = .upper),
+    aes(time, value, ymin = value.lower, ymax = value.upper),
     col = "black",
     alpha = 0.8
   ) +
@@ -298,24 +385,77 @@ ggsave(
 )
 ```
 
+### Daily reported cases
+
+```{r}
+plot_daily_cases_unmit <-
+  ggplot() +
+  geom_line(
+    data = data_epi_curve %>%
+      filter(measure == "daily_infections", response == "none"),
+    aes(time, reported_value, group = tag),
+    alpha = 0.8
+  ) +
+  geom_lineribbon(
+    data = data_epi_curve_summary_unmit %>%
+      filter(measure == "daily_infections"),
+    aes(time, reported_value,
+      ymin = reported_value.lower,
+      ymax = reported_value.upper
+    ),
+    col = "black",
+    alpha = 0.8
+  ) +
+  geom_vline(
+    xintercept = day_now,
+    col = "red", linetype = "dashed"
+  ) +
+  scale_fill_viridis_d(
+    begin = 0.1, direction = -1,
+    labels = function(x) {
+      scales::percent(as.numeric(x))
+    }
+  ) +
+  scale_y_continuous(
+    labels = scales::comma
+  ) +
+  labs(
+    x = x_label_days,
+    y = "Daily new cases",
+    fill = NULL
+  ) +
+  xlim(30, 60) +
+  theme_bw(base_size = 24, base_family = "Arial") +
+  fn_theme()
+
+ggsave(
+  "figures/plot_unmit_daily_cases.png",
+  plot = plot_daily_cases_unmit, height = 7
+)
+```
+
 ```{r echo=FALSE}
 measures <- c("daily_deaths", "daily_hospitalisations", "total_hosp")
+reporting_rates <- c(death_reporting, hosp_reporting, hosp_reporting)
 
 Map(
-  measures, curve_measure_labels,
-  f = function(m, l) {
+  measures, curve_measure_labels, reporting_rates,
+  f = function(m, l, reporting) {
     plot_epi_curves_unmit <-
       ggplot() +
       geom_line(
         data = data_epi_curve %>%
           filter(measure == m, response == "none"),
-        aes(time, value, group = tag),
+        aes(time, reported_value, group = tag),
         alpha = 0.8, linewidth = 0.2
       ) +
       geom_lineribbon(
         data = data_epi_curve_summary_unmit %>%
           filter(measure == m),
-        aes(time, value, ymin = .lower, ymax = .upper),
+        aes(time, reported_value,
+          ymin = reported_value.lower,
+          ymax = reported_value.upper
+        ),
         col = "black",
         alpha = 0.8
       ) +
@@ -374,13 +514,14 @@ summary_measure_labels <- c(
 ```
 
 ```{r echo=FALSE}
-plot_unmit_epi_summary <- ggplot(
-  data_epi_summary_unmit %>%
-    filter(measure != "total_hospitalisations")
-) +
+plot_unmit_epi_summary <-
+  ggplot(
+    data_epi_summary_unmit %>%
+      filter(measure != "total_hospitalisations")
+  ) +
   stat_interval(
     aes(
-      y = value,
+      y = reported_value,
       color = after_stat(
         level
       )
@@ -390,7 +531,7 @@ plot_unmit_epi_summary <- ggplot(
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(y = value),
+    aes(y = reported_value),
     .width = c(0.5, 0.95)
   ) +
   facet_wrap(
@@ -401,7 +542,7 @@ plot_unmit_epi_summary <- ggplot(
     scales = "free"
   ) +
   scale_y_continuous(
-    labels = scales::comma
+    labels = scales::label_comma()
   ) +
   scale_colour_viridis_d(
     begin = 0.1, direction = -1,
@@ -411,7 +552,7 @@ plot_unmit_epi_summary <- ggplot(
   ) +
   labs(
     x = NULL,
-    y = "Count",
+    y = "Count (up to day 60)",
     colour = "Proj. interv."
   ) +
   guides(
@@ -432,14 +573,15 @@ ggsave(
 ## Deaths by age group
 
 ```{r echo=FALSE}
-plot_unmit_deaths_by_age <- ggplot(data_deaths_unmit) +
+plot_unmit_deaths_by_age <-
+  ggplot(data_deaths_unmit) +
   stat_interval(
     aes(
       forcats::fct_relevel(
         age_group,
-        c("0-4", "5-19", "20-65", "65+")
+        c("0-4", "5-19", "20-64", "65+")
       ),
-      y = value,
+      y = reported_value,
       color = after_stat(
         level
       )
@@ -449,7 +591,7 @@ plot_unmit_deaths_by_age <- ggplot(data_deaths_unmit) +
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(age_group, y = value),
+    aes(age_group, y = reported_value),
     .width = c(0.5, 0.95),
   ) +
   scale_y_continuous(
@@ -481,6 +623,61 @@ ggsave(
   plot_unmit_deaths_by_age
 )
 ```
+
+### CFR by age group
+
+```{r}
+plot_cfr_by_age <-
+  ggplot(data_cfr) +
+  stat_interval(
+    aes(
+      forcats::fct_relevel(
+        age_group,
+        c("0-4", "5-19", "20-64", "65+")
+      ),
+      y = cfr,
+      color = after_stat(
+        level
+      )
+    ),
+    .width = c(0.5, 0.95),
+    linewidth = 30, alpha = 0.8,
+    normalize = "groups"
+  ) +
+  stat_pointinterval(
+    aes(age_group, y = cfr),
+    .width = c(0.5, 0.95),
+  ) +
+  scale_y_continuous(
+    labels = scales::percent
+  ) +
+  scale_colour_viridis_d(
+    begin = 0.1, direction = -1,
+    labels = function(x) {
+      scales::percent(as.numeric(x))
+    }
+  ) +
+  labs(
+    y = "CFR (naive)",
+    x = "Age group",
+    colour = "Proj. interv."
+  ) +
+  guides(
+    colour = guide_legend(
+      override.aes = list(linewidth = 3)
+    )
+  ) +
+  theme_bw(
+    base_size = 24, base_family = "Arial"
+  ) +
+  fn_theme()
+
+ggsave(
+  "figures/plot_cfr_by_age.png",
+  plot_cfr_by_age
+)
+```
+
 
 ## Lost life years, future earnings, and GVA
 
@@ -530,7 +727,7 @@ plot_unmit_gva_loss <-
   ) +
   labs(
     x = NULL,
-    y = "Cumulative value lost in billion £",
+    y = "Cumulative value lost (billion £)",
     col = "Proj. interv."
   ) +
   guides(
@@ -582,13 +779,16 @@ Map(
       geom_line(
         data = data_epi_curve %>%
           filter(measure == m),
-        aes(time, value, group = tag),
+        aes(time, reported_value, group = tag),
         alpha = 0.8
       ) +
       geom_lineribbon(
         data = data_epi_curve_summary %>%
           filter(measure == m),
-        aes(time, value, ymin = .lower, ymax = .upper),
+        aes(time, reported_value,
+          ymin = reported_value.lower,
+          ymax = reported_value.upper
+        ),
         col = "black",
         alpha = 0.8
       ) +
@@ -643,13 +843,16 @@ Map(
       geom_line(
         data = data_epi_curve %>%
           filter(measure == m),
-        aes(time, value, group = tag),
+        aes(time, reported_value, group = tag),
         alpha = 0.8
       ) +
       geom_lineribbon(
         data = data_epi_curve_summary %>%
           filter(measure == m),
-        aes(time, value, ymin = .lower, ymax = .upper),
+        aes(time, reported_value,
+          ymin = reported_value.lower,
+          ymax = reported_value.upper
+        ),
         col = "black",
         alpha = 0.8
       ) +
@@ -699,14 +902,15 @@ Map(
 
 ```{r echo=FALSE}
 # plot uncertainty in epi outcomes
-plot_compare_epi_summary <- ggplot(
-  data_epi_summary %>%
-    filter(measure != "total_hospitalisations")
-) +
+plot_compare_epi_summary <-
+  ggplot(
+    data_epi_summary %>%
+      filter(measure != "total_hospitalisations")
+  ) +
   stat_interval(
     aes(
       response,
-      y = value,
+      y = reported_value,
       color = after_stat(
         level
       )
@@ -716,7 +920,7 @@ plot_compare_epi_summary <- ggplot(
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(response, y = value),
+    aes(response, y = reported_value),
     .width = c(0.5, 0.95)
   ) +
   facet_wrap(
@@ -769,7 +973,7 @@ data_epi_curve %>%
   ) %>%
   group_by(response, tag) %>%
   filter(
-    value == max(value),
+    value == max(reported_value),
     value > hosp_capacity
   ) %>%
   group_by(response) %>%
@@ -789,7 +993,7 @@ plot_compare_deaths_by_age <-
   stat_interval(
     aes(
       response,
-      y = value,
+      y = reported_value,
       color = after_stat(
         level
       )
@@ -799,13 +1003,13 @@ plot_compare_deaths_by_age <-
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(response, y = value)
+    aes(response, y = reported_value)
   ) +
   facet_grid(
     cols = vars(
       forcats::fct_relevel(
         age_group,
-        c("0-4", "5-19", "20-65", "65+")
+        c("0-4", "5-19", "20-64", "65+")
       )
     ),
     labeller = labeller(
@@ -851,7 +1055,7 @@ plot_compare_deaths_by_age <-
   stat_interval(
     aes(
       response,
-      y = value,
+      y = reported_value,
       color = after_stat(
         level
       )
@@ -861,13 +1065,13 @@ plot_compare_deaths_by_age <-
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(response, y = value)
+    aes(response, y = reported_value)
   ) +
   facet_wrap(
     vars(
       forcats::fct_relevel(
         age_group,
-        c("0-4", "5-19", "20-65", "65+")
+        c("0-4", "5-19", "20-64", "65+")
       )
     ),
     labeller = labeller(
@@ -922,7 +1126,7 @@ fn_qtl <- function(x, probs = c(0.5, 0.25, 0.75)) {
 ```{r}
 data_deaths %>%
   group_by(response, age_group) %>%
-  reframe(fn_qtl(value)) %>%
+  reframe(fn_qtl(reported_value)) %>%
   mutate(
     response = case_when(
       response == "none" ~ "unmitigated",
@@ -978,7 +1182,7 @@ plot_compare_gva_loss <-
   ) +
   labs(
     x = "Domain",
-    y = "Cumulative value lost in billion £",
+    y = "Cumulative value lost (billion £)",
     col = "Proj. interv."
   ) +
   guides(
