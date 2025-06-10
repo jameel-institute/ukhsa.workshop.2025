@@ -66,6 +66,13 @@ r0_summary <- c(
 r0_summary <- round(r0_summary, 3)
 ```
 
+### Chosen R0
+
+```{r}
+r0_phase_1 <- median(r0_samples)
+r0_phase_2 <- quantile(r0_samples, 0.83)
+```
+
 ### Severity profile
 
 ```{r echo=FALSE, include=FALSE}
@@ -130,6 +137,27 @@ day_now <- 30
 horizon <- 60
 ```
 
+<!-- ### Run 0 - 30 model -->
+
+<!-- ```{r} -->
+<!-- data_initial = daedalus( -->
+<!--   "GBR", -->
+<!--   daedalus_infection( -->
+<!--     "influenza_2009", -->
+<!--     r0 = r0_phase_1 -->
+<!--   ), -->
+<!--   time_end = 29 -->
+<!-- ) -->
+<!-- incidence_initial = get_incidence( -->
+<!--   data_initial, "infections" -->
+<!-- ) -->
+
+<!-- # get epidemic size day 30s -->
+<!-- epidemic_size_30 = tail(incidence_initial$value, 1) -->
+<!-- ``` -->
+
+### Run Phase 1 scenarios
+
 ```{r echo=FALSE, include=FALSE}
 gbr <- daedalus_country("GBR")
 hosp_capacity <- gbr$hospital_capacity
@@ -145,7 +173,10 @@ output <- run_scenarios(
   response_time = day_now + 1,
   response_duration = horizon - day_now,
   time_end = horizon,
-  initial_state_manual = list(p_infectious = 1 / 70e6)
+  initial_state_manual = list(
+    p_infectious = 1 / 70e6,
+    p_asymptomatic = 0.99
+  )
 )
 ```
 
@@ -271,6 +302,7 @@ data_cost_edu <- filter(data_cost_output, domain == "education") %>%
 
 ```{r echo=FALSE, include=FALSE}
 data_econ_costs <- get_econ_cost_data(output)
+
 data_econ_costs <- mutate(
   data_econ_costs,
   response = forcats::fct_relevel(response, response_levels)
@@ -296,8 +328,8 @@ data_econ_cost_absences <- filter(
 ```{r echo=FALSE, include=FALSE}
 curve_measure_labels <- c(
   daily_deaths = "New deaths",
-  daily_hospitalisations = "Hospital admissions",
-  total_hosp = "Hospital occupancy"
+  daily_hospitalisations = "Daily hospital demand",
+  total_hosp = "Total hospital demand"
 )
 ```
 
@@ -327,16 +359,16 @@ plot_daily_cases_unmit_explainer <-
   ) +
   labs(
     x = x_label_days,
-    y = "Number of new infections",
-    fill = "Conf. interv."
+    y = "New cases",
+    fill = "Proj. interv."
   ) +
-  xlim(30, 60) +
+  # xlim(0, 60) +
   theme_bw(base_size = 24, base_family = "Arial") +
   fn_theme()
 
 ggsave(
-  "figures/plot_unmit_daily_infections_explainer.png",
-  plot_daily_infections_unmit_explainer
+  "figures/plot_unmit_daily_cases_explainer.png",
+  plot_daily_cases_unmit_explainer
 )
 ```
 
@@ -372,16 +404,16 @@ plot_daily_infections_unmit <-
   ) +
   labs(
     x = x_label_days,
-    y = "Number of new infections",
-    fill = NULL
+    y = "Daily new infections",
+    fill = "Proj. interv."
   ) +
-  xlim(30, 60) +
+  xlim(20, 60) +
   theme_bw(base_size = 24, base_family = "Arial") +
   fn_theme()
 
 ggsave(
-  "figures/plot_unmit_daily_infections.png",
-  plot = plot_daily_infections_unmit, height = 7
+  "figures/DO_NOT_SHOW_unmit_daily_infections.png",
+  plot = plot_daily_infections_unmit, height = 7, width = 10
 )
 ```
 
@@ -421,16 +453,17 @@ plot_daily_cases_unmit <-
   ) +
   labs(
     x = x_label_days,
-    y = "Daily new cases",
-    fill = NULL
+    y = "New cases",
+    caption = "Projection includes some under-ascertainment.",
+    fill = "Proj. interv."
   ) +
-  xlim(30, 60) +
+  xlim(20, 60) +
   theme_bw(base_size = 24, base_family = "Arial") +
   fn_theme()
 
 ggsave(
   "figures/plot_unmit_daily_cases.png",
-  plot = plot_daily_cases_unmit, height = 7
+  plot = plot_daily_cases_unmit, height = 7, width = 10
 )
 ```
 
@@ -477,11 +510,11 @@ Map(
         y = l,
         fill = "Proj. interv."
       ) +
-      xlim(30, 60) +
+      xlim(20, 60) +
       theme_bw(base_size = 24, base_family = "Arial") +
       fn_theme()
 
-    if (m == "total_hosp") {
+    if (m %in% c("total_hosp", "daily_hospitalisations")) {
       plot_epi_curves_unmit <- plot_epi_curves_unmit +
         geom_hline(
           yintercept = hosp_capacity,
@@ -492,7 +525,8 @@ Map(
     filename <- glue::glue("figures/plot_unmit_{m}.png")
     ggsave(
       filename,
-      plot = plot_epi_curves_unmit
+      plot = plot_epi_curves_unmit,
+      height = 7, width = 10
     )
   }
 )
@@ -553,7 +587,8 @@ plot_unmit_epi_summary <-
   labs(
     x = NULL,
     y = "Count (up to day 60)",
-    colour = "Proj. interv."
+    colour = "Proj. interv.",
+    caption = "Projection includes some under-ascertainment.",
   ) +
   guides(
     colour = guide_legend(
@@ -566,7 +601,8 @@ plot_unmit_epi_summary <-
 
 ggsave(
   "figures/plot_unmit_epi_summary.png",
-  plot = plot_unmit_epi_summary
+  plot = plot_unmit_epi_summary,
+  height = 7, width = 10
 )
 ```
 
@@ -604,9 +640,10 @@ plot_unmit_deaths_by_age <-
     }
   ) +
   labs(
-    y = "Cumulative deaths",
+    y = "Cumulative deaths (up to day 60)",
     x = "Age group",
-    colour = "Proj. interv."
+    colour = "Proj. interv.",
+    caption = "Projection includes some under-ascertainment."
   ) +
   guides(
     colour = guide_legend(
@@ -620,7 +657,8 @@ plot_unmit_deaths_by_age <-
 
 ggsave(
   "figures/plot_unmit_deaths_by_age.png",
-  plot_unmit_deaths_by_age
+  plot_unmit_deaths_by_age,
+  height = 7, width = 10
 )
 ```
 
@@ -673,11 +711,11 @@ plot_cfr_by_age <-
   fn_theme()
 
 ggsave(
-  "figures/plot_cfr_by_age.png",
-  plot_cfr_by_age
+  "figures/plot_unmit_cfr_by_age.png",
+  plot_cfr_by_age,
+  height = 7, width = 10
 )
 ```
-
 
 ## Lost life years, future earnings, and GVA
 
@@ -728,7 +766,8 @@ plot_unmit_gva_loss <-
   labs(
     x = NULL,
     y = "Cumulative value lost (billion £)",
-    col = "Proj. interv."
+    col = "Proj. interv.",
+    caption = "Valuation of losses from reduced GVA, reduced education, and deaths."
   ) +
   guides(
     colour = guide_legend(
@@ -740,7 +779,8 @@ plot_unmit_gva_loss <-
 
 ggsave(
   "figures/plot_unmit_gva_loss.png",
-  plot_unmit_gva_loss
+  plot_unmit_gva_loss,
+  height = 7, width = 10
 )
 ```
 
@@ -751,18 +791,18 @@ ggsave(
 ```{r}
 curve_measure_labels <- c(
   daily_infections = "Daily cases",
-  daily_deaths = "New deaths",
-  daily_hospitalisations = "Hospital admissions",
-  total_hosp = "Hospital occupancy"
+  daily_deaths = "Daily deaths",
+  daily_hospitalisations = "Daily hospital demand",
+  total_hosp = "Total hospital demand"
 )
 ```
 
 ```{r}
 response_labels <- c(
   none = "Unmitigated",
-  economic_closures = "Business closures",
-  elimination = "S+B closures",
-  school_closures = "School closures"
+  economic_closures = "Busin. clos. (light)",
+  elimination = "S+B clos. (severe)",
+  school_closures = "S (severe) + B (light)"
 )
 ```
 
@@ -812,16 +852,28 @@ Map(
         y = l,
         fill = "Proj. interv."
       ) +
-      xlim(30, 60) +
+      xlim(20, 60) +
       theme_bw(base_size = 24, base_family = "Arial") +
       fn_theme()
 
-    if (m == "total_hosp") {
+    if (m %in% c("total_hosp", "daily_hospitalisations")) {
       plot_epi_curves_compare <- plot_epi_curves_compare +
         geom_hline(
           yintercept = hosp_capacity,
           col = "red", linetype = "dashed"
+        ) +
+        annotate(
+          "text",
+          x = horizon * 2 / 3,
+          y = hosp_capacity,
+          label = "Surge hosp. cap.",
+          size = 8,
+          colour = "red"
         )
+    }
+
+    if (m == "daily_infections") {
+      m <- "daily_cases"
     }
 
     filename <- glue::glue("figures/plot_compare_{m}.png")
@@ -876,16 +928,28 @@ Map(
         y = l,
         fill = "Proj. interv."
       ) +
-      xlim(30, 60) +
+      xlim(20, 60) +
       theme_bw(base_size = 24, base_family = "Arial") +
       fn_theme()
 
-    if (m == "total_hosp") {
+    if (m %in% c("total_hosp", "daily_hospitalisations")) {
       plot_epi_curves_compare <- plot_epi_curves_compare +
         geom_hline(
           yintercept = hosp_capacity,
           col = "red", linetype = "dashed"
+        ) +
+        annotate(
+          "text",
+          x = horizon * 2 / 3,
+          y = hosp_capacity,
+          label = "Surge hosp. cap.",
+          size = 8,
+          colour = "red"
         )
+    }
+
+    if (m == "daily_infections") {
+      m <- "daily_cases"
     }
 
     filename <- glue::glue("figures/plot_compare_{m}_square.png")
@@ -960,7 +1024,7 @@ filename <- glue::glue("figures/plot_compare_epi_summary.png")
 ggsave(
   filename,
   plot = plot_compare_epi_summary,
-  width = 14
+  width = 14, height = 6
 )
 ```
 
@@ -1045,7 +1109,7 @@ plot_compare_deaths_by_age <-
 ggsave(
   "figures/plot_compare_deaths_by_age.png",
   plot_compare_deaths_by_age,
-  height = 10, width = 21
+  height = 10, width = 25
 )
 ```
 
@@ -1183,7 +1247,8 @@ plot_compare_gva_loss <-
   labs(
     x = "Domain",
     y = "Cumulative value lost (billion £)",
-    col = "Proj. interv."
+    col = "Proj. interv.",
+    caption = "Valuation of losses from reduced GVA, reduced education, and deaths."
   ) +
   guides(
     colour = guide_legend(
@@ -1240,8 +1305,9 @@ plot_compare_gva_loss <-
   ) +
   labs(
     x = "Domain",
-    y = "Cumulative value lost in billion £",
-    col = "Proj. interv."
+    y = "Cumulative value lost (billion £)",
+    col = "Proj. interv.",
+    caption = "Valuation of losses from reduced GVA, reduced education, and deaths."
   ) +
   guides(
     colour = guide_legend(
@@ -1314,9 +1380,10 @@ plot_compare_econ_cost_absences <-
     }
   ) +
   labs(
-    x = "Response strategy",
-    y = "Cumulative value lost in billion £",
-    col = "Proj. interv."
+    x = NULL,
+    y = "Cumulative value lost (billion £)",
+    col = "Proj. interv.",
+    caption = "Economic losses from worker absences due to illness or death."
   ) +
   theme_bw(24, "Arial") +
   fn_theme() +
@@ -1328,7 +1395,8 @@ plot_compare_econ_cost_absences <-
 
 ggsave(
   "figures/plot_compare_econ_cost_absences.png",
-  plot_compare_econ_cost_absences
+  plot_compare_econ_cost_absences,
+  height = 7, width = 10
 )
 ```
 
@@ -1355,16 +1423,18 @@ plot_compare_econ_cost_closures <-
     palette = "Dark2"
   ) +
   labs(
-    x = "Response strategy",
-    y = "Cumulative value lost in billion £",
-    col = "Proj. interv."
+    x = NULL,
+    y = "Cumulative value lost (billion £)",
+    col = "Proj. interv.",
+    caption = "Economic losses from economic sector closures."
   ) +
   theme_bw(24, "Arial") +
   fn_theme()
 
 ggsave(
   "figures/plot_compare_econ_cost_closures.png",
-  plot_compare_econ_cost_closures
+  plot_compare_econ_cost_closures,
+  height = 7, width = 10
 )
 ```
 
