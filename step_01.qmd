@@ -508,7 +508,8 @@ Map(
       labs(
         x = x_label_days,
         y = l,
-        fill = "Proj. interv."
+        fill = "Proj. interv.",
+        caption = "Projection includes some under-ascertainment."
       ) +
       xlim(20, 60) +
       theme_bw(base_size = 24, base_family = "Arial") +
