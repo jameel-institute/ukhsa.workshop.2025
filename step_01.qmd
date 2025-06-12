@@ -35,7 +35,7 @@ fn_theme <- function() {
 ```
 
 ```{r}
-x_label_days <- "Days after first case"
+x_label_days <- "Days after first detected case"
 measure_levels <- c(
   "daily_infections", "daily_hospitalisations",
   "total_hosp", "daily_deaths"
@@ -136,25 +136,6 @@ response_levels <- rev(names(daedalus.data::closure_data))
 day_now <- 30
 horizon <- 60
 ```
-
-<!-- ### Run 0 - 30 model -->
-
-<!-- ```{r} -->
-<!-- data_initial = daedalus( -->
-<!--   "GBR", -->
-<!--   daedalus_infection( -->
-<!--     "influenza_2009", -->
-<!--     r0 = r0_phase_1 -->
-<!--   ), -->
-<!--   time_end = 29 -->
-<!-- ) -->
-<!-- incidence_initial = get_incidence( -->
-<!--   data_initial, "infections" -->
-<!-- ) -->
-
-<!-- # get epidemic size day 30s -->
-<!-- epidemic_size_30 = tail(incidence_initial$value, 1) -->
-<!-- ``` -->
 
 ### Run Phase 1 scenarios
 
@@ -328,7 +309,7 @@ data_econ_cost_absences <- filter(
 ```{r echo=FALSE, include=FALSE}
 curve_measure_labels <- c(
   daily_deaths = "New deaths",
-  daily_hospitalisations = "Daily hospital demand",
+  daily_hospitalisations = "New hospital demand",
   total_hosp = "Total hospital demand"
 )
 ```
@@ -359,7 +340,7 @@ plot_daily_cases_unmit_explainer <-
   ) +
   labs(
     x = x_label_days,
-    y = "New cases",
+    y = "New detected cases",
     fill = "Proj. interv."
   ) +
   # xlim(0, 60) +
@@ -454,7 +435,7 @@ plot_daily_cases_unmit <-
   ) +
   labs(
     x = x_label_days,
-    y = "New cases",
+    y = "New detected cases",
     caption = "Projection includes some under-ascertainment.",
     fill = "Proj. interv."
   ) +
@@ -792,9 +773,9 @@ ggsave(
 
 ```{r}
 curve_measure_labels <- c(
-  daily_infections = "Daily cases",
-  daily_deaths = "Daily deaths",
-  daily_hospitalisations = "Daily hospital demand",
+  daily_infections = "New detected cases",
+  daily_deaths = "New deaths",
+  daily_hospitalisations = "New hospital demand",
   total_hosp = "Total hospital demand"
 )
 ```
