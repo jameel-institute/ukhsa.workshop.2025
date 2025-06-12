@@ -1,9 +1,9 @@
 response,cost_type,pctl_50,pctl_25,pctl_75
 unmitigated,economic_cost_closures,0,0,0
-unmitigated,economic_cost_absences,1971,282,8652
-school_closures,economic_cost_closures,15905,15905,15905
-school_closures,economic_cost_absences,1392,194,7257
-business_closures,economic_cost_closures,4364,4364,4364
-business_closures,economic_cost_absences,1819,259,8343
-S+B closures,economic_cost_closures,55324,55324,55324
-S+B closures,economic_cost_absences,508,71,3876
+unmitigated,economic_cost_absences,2319,247,7792
+school_closures,economic_cost_closures,11134,11134,11134
+school_closures,economic_cost_absences,1728,172,7036
+business_closures,economic_cost_closures,3055,3055,3055
+business_closures,economic_cost_absences,2123,221,7480
+S+B closures,economic_cost_closures,38727,38727,38727
+S+B closures,economic_cost_absences,555,51,3974
