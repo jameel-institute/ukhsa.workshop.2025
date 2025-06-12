@@ -525,7 +525,7 @@ data_epi_summary_unmit <- filter(
 
 ```{r echo=FALSE}
 summary_measure_labels <- c(
-  epidemic_size = "Cumulative infections",
+  epidemic_size = "Cumulative detected cases",
   total_deaths = "Cumulative deaths"
 )
 ```
