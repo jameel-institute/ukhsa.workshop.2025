@@ -34,7 +34,7 @@ fn_theme <- function() {
 ```
 
 ```{r}
-x_label_days <- "Days after first case"
+x_label_days <- "Days after first detected case"
 measure_levels <- c(
   "daily_infections", "daily_hospitalisations",
   "total_hosp", "daily_deaths"
@@ -48,10 +48,10 @@ measure_levels <- c(
 disease_x <- daedalus_infection("influenza_2009")
 r0 <- get_data(disease_x, "r0")
 r0_samples <- withr::with_seed(
-  1, rbeta(100, 2, 5)
-) * r0 + 1.0
-r0_samples <- round(r0_samples, 4)
-r0_samples <- scales::rescale(r0_samples, c(1.15, 1.5))
+  1, rnorm(100)
+)
+
+r0_samples <- scales::rescale(r0_samples, c(1.52, 1.6))
 r0_samples <- sort(r0_samples)
 ```
 
@@ -67,24 +67,42 @@ r0_summary <- round(r0_summary, 3)
 ```
 
 ```{r echo=FALSE, include=FALSE}
-# varying hosp risk
-omega <- get_data(disease_x, "omega")
-omega_profile <- omega / mean(omega)
+# draw mortality profile so working and school age worst affected
+severity_profile <- c(0.2, 1.5, 2, 1.5)
+
+# varying mort risk
+eta <- get_data(disease_x, "eta")
+
+# check hosp profile
+eta / mean(eta)
+
 # draw eta samples
-omega_samples <- withr::with_seed(
+eta_samples <- withr::with_seed(
   1, rbeta(100, 2, 5)
-) * mean(omega) + mean(omega) / 2
+) * mean(eta) + mean(eta) / 2
+
+
+# get mean mortality|hosp and scale as well
+omega <- get_data(disease_x, "omega")
+omega <- mean(omega) * 1.5
+
+# bump up 65+ recovery
+gamma_H <- get_data(disease_x, "gamma_H")
+gamma_H[4] <- mean(gamma_H)
+gamma_H[3] <- gamma_H[3] * 0.8
 ```
 
 ```{r echo=FALSE, include=FALSE}
 # make list of infection objects
 disease_list <- Map(
-  r0_samples, omega_samples,
+  r0_samples, eta_samples,
   f = function(x, y) {
     daedalus_infection(
       "influenza_2009",
       r0 = x,
-      omega = y * omega_profile
+      eta = y * severity_profile,
+      omega = omega * severity_profile,
+      gamma_H = gamma_H
     )
   }
 )
@@ -123,28 +141,69 @@ output <- run_scenarios(
 )
 ```
 
+```{r}
+case_reporting <- 0.1 # 10% infections reported as cases
+hosp_reporting <- 1.0 # 100% hosps assumed/reported to be epidemic
+death_reporting <- 0.95 # 95% deaths reported as epidemic deaths
+
+response_levels <- rev(names(daedalus.data::closure_data))
+```
+
 ```{r echo=FALSE, include=FALSE}
 #### GET ALL OUTPUTS ####
 # get epi curve data and prepare for plotting
 data_epi_curve <- get_epicurve_data(output, disease_tags, format = "long")
 
+# get reported values
+data_epi_curve <- mutate(
+  data_epi_curve,
+  reporting_rate = case_when(
+    measure == "daily_deaths" ~ death_reporting,
+    measure == "daily_infections" ~ case_reporting,
+    measure == "daily_hospitalisations" ~ hosp_reporting,
+    measure == "total_hosp" ~ hosp_reporting
+  ),
+  reported_value = value * reporting_rate
+)
+
 data_epi_curve_summary <- group_by(
-  data_epi_curve, time, measure, response
+  data_epi_curve, time, response, measure
 ) %>%
   curve_interval(
-    value,
+    value, reported_value,
     .width = c(0.5, 0.95)
   )
+```
 
+```{r}
 # get epi summary data
 data_epi_summary <- get_summary_data(output, disease_tags, format = "long")
 
-# get deaths by age
+# get reported values1
+data_epi_summary <- mutate(
+  data_epi_summary,
+  reporting_rate = case_when(
+    measure == "total_deaths" ~ death_reporting,
+    measure == "epidemic_size" ~ case_reporting,
+    measure == "total_hospitalisations" ~ hosp_reporting
+  ),
+  reported_value = value * reporting_rate
+)
+```
+
+```{r echo=FALSE, include=FALSE}
 data_deaths <- get_summary_data(
   output, disease_tags,
   format = "long", measures = "deaths", groups = "age_group"
 )
 
+data_deaths <- mutate(
+  data_deaths,
+  reported_value = value * death_reporting
+)
+```
+
+```{r}
 # get losses data
 data_cost_output <- get_cost_data(output, disease_tags, format = "long") %>%
   filter(domain != "life_years")
@@ -164,8 +223,8 @@ data_econ_cost_absences <- filter(
 
 ```{r}
 # set current day
-day_zero <- 30
-day_now <- 60
+day_zero <- 20
+day_now <- 120
 ```
 
 ```{r}
@@ -176,13 +235,13 @@ measures <- c(
 )
 
 curve_measure_labels <- c(
-  daily_infections = "New cases",
-  daily_hospitalisations = "Hospital admissions",
-  total_hosp = "Hospital occupancy",
+  daily_infections = "New detected cases",
+  daily_hospitalisations = "New hospital demand",
+  total_hosp = "Total hospital demand",
   daily_deaths = "New deaths"
 )
 
-response_labels = c(none = "Unmitigated", custom_response_1 = "Custom")
+response_labels <- c(none = "Unmitigated", custom_response_1 = "Chosen response")
 
 plots_epi_curves <- Map(
   measures, curve_measure_labels,
@@ -199,13 +258,15 @@ plots_epi_curves <- Map(
       geom_line(
         data = data_epi_curve %>%
           filter(measure == m),
-        aes(time, value, group = tag),
+        aes(time, reported_value, group = tag),
         alpha = 0.8, linewidth = 0.2
       ) +
       geom_lineribbon(
         data = data_epi_curve_summary %>%
           filter(measure == m),
-        aes(time, value, ymin = .lower, ymax = .upper),
+        aes(time, reported_value,
+          ymin = reported_value.lower, ymax = reported_value.upper
+        ),
         col = "black",
         alpha = 0.8
       ) +
@@ -250,49 +311,49 @@ plots_epi_curves <- Map(
 )
 ```
 
-# Step 4: Days 30 - 60
+# Days 30 -- 120
 
-## New cases {.smaller}
+## Detected cases {.smaller}
 
-```{r}
+```{r fig.width=10}
 plots_epi_curves$daily_infections
 ```
 
-## New hospital admissions {.smaller}
+## Daily new hospital demand {.smaller}
 
-```{r}
+```{r fig.width=10}
 plots_epi_curves$daily_hospitalisations
 ```
 
-## Hospital occupancy {.smaller}
+## Total hospital demand {.smaller}
 
-```{r}
+```{r fig.width=10}
 plots_epi_curves$total_hosp
 ```
 
-## New deaths
+## Daily deaths
 
-```{r}
+```{r fig.width=10}
 plots_epi_curves$daily_deaths
 ```
 
 ## Cumulative summary
 
-```{r echo=FALSE}
+```{r echo=FALSE, fig.width=10}
 summary_measure_labels <- c(
-  epidemic_size = "Cumulative infections",
+  epidemic_size = "Cumulative detected cases",
   total_deaths = "Cumulative deaths"
 )
 ```
 
-```{r}
+```{r fig.height=10, fig.width=10}
 ggplot(
   data_epi_summary %>%
     filter(measure != "total_hospitalisations")
 ) +
   stat_interval(
     aes(
-      y = value,
+      y = reported_value,
       color = after_stat(
         level
       )
@@ -302,7 +363,7 @@ ggplot(
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(y = value),
+    aes(y = reported_value),
     .width = c(0.5, 0.95)
   ) +
   facet_grid(
@@ -314,13 +375,6 @@ ggplot(
     ),
     scales = "free"
   ) +
-  # facet_wrap(
-  #   facets = vars(measure),
-  #   labeller = labeller(
-  #     measure = summary_measure_labels
-  #   ),
-  #   scales = "free"
-  # ) +
   scale_y_continuous(
     labels = scales::comma
   ) +
@@ -347,15 +401,15 @@ ggplot(
 
 ## Deaths by age group
 
-```{r}
+```{r fig.height=7, fig.width=10}
 ggplot(data_deaths) +
   stat_interval(
     aes(
       forcats::fct_relevel(
         age_group,
-        c("0-4", "5-19", "20-65", "65+")
+        c("0-4", "5-19", "20-64", "65+")
       ),
-      y = value,
+      y = reported_value,
       color = after_stat(
         level
       )
@@ -365,12 +419,12 @@ ggplot(data_deaths) +
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(age_group, y = value),
+    aes(age_group, y = reported_value),
     .width = c(0.5, 0.95),
   ) +
   facet_grid(
     cols = vars(response),
-    rows = vars(measure),
+    # rows = vars(measure),
     labeller = labeller(
       measure = summary_measure_labels,
       response = response_labels
@@ -410,7 +464,7 @@ loss_measure_labels <- c(
 )
 ```
 
-```{r}
+```{r fig.width=14}
 ggplot(data_cost_output) +
   stat_interval(
     aes(
@@ -442,361 +496,6 @@ ggplot(data_cost_output) +
   scale_y_continuous(
     labels = scales::label_currency(
       scale = 0.7e-3, prefix = "£", suffix = " B"
-    )
-  ) +
-  scale_colour_viridis_d(
-    begin = 0.1, direction = -1,
-    labels = function(x) {
-      scales::percent(as.numeric(x))
-    }
-  ) +
-  labs(
-    x = NULL,
-    y = "Cumulative value lost (billion £)",
-    col = "Proj. interv."
-  ) +
-  guides(
-    colour = guide_legend(
-      override.aes = list(linewidth = 3)
-    )
-  ) +
-  theme_bw(24, "Arial") +
-  fn_theme()
-```
-
-# Step 4: Days 60 - 120: Lift closures?
-
-```{r}
-# assume choice to lift closures at day 100
-response_end <- 100 # can be changed
-```
-
-```{r echo=FALSE, include=FALSE}
-gbr <- daedalus_country("GBR")
-hosp_capacity <- gbr$hospital_capacity
-
-# prepare outcomes for two scenarios
-# prepare outcomes for two scenarios
-output <- run_scenarios(
-  "GBR",
-  disease_list,
-  response = list("none", response),
-  response_time = response_start,
-  response_duration = response_end - response_start,
-  time_end = horizon
-)
-```
-
-```{r echo=FALSE, include=FALSE}
-#### GET ALL OUTPUTS ####
-# get epi curve data and prepare for plotting
-data_epi_curve <- get_epicurve_data(output, disease_tags, format = "long")
-
-data_epi_curve_summary <- group_by(
-  data_epi_curve, time, measure
-) %>%
-  curve_interval(
-    value,
-    .width = c(0.5, 0.95)
-  )
-
-# get epi summary data
-data_epi_summary <- get_summary_data(output, disease_tags, format = "long")
-
-# get deaths by age
-data_deaths <- get_summary_data(
-  output, disease_tags,
-  format = "long", measures = "deaths", groups = "age_group"
-)
-
-# get losses data
-data_cost_output <- get_cost_data(output, disease_tags, format = "long") %>%
-  filter(domain != "life_years")
-
-# separate economic losses into closures and absences
-data_econ_costs <- get_econ_cost_data(output)
-data_econ_cost_closures <- filter(
-  data_econ_costs, cost_type == "economic_cost_closures"
-) %>%
-  group_by(response) %>%
-  summarise(cost = median(cost))
-
-data_econ_cost_absences <- filter(
-  data_econ_costs, cost_type == "economic_cost_absences"
-)
-```
-
-```{r}
-# set current day
-day_zero <- 30
-day_now <- 60
-```
-
-```{r}
-# FIGURES: epi curves
-measures <- c(
-  "daily_infections", "daily_hospitalisations",
-  "total_hosp", "daily_deaths"
-)
-
-curve_measure_labels <- c(
-  daily_infections = "New cases",
-  daily_hospitalisations = "Hospital admissions",
-  total_hosp = "Hospital occupancy",
-  daily_deaths = "New deaths"
-)
-
-plots_epi_curves <- Map(
-  measures, curve_measure_labels,
-  f = function(m, l) {
-    plot_epi_curves <-
-      ggplot() +
-      annotate(
-        geom = "rect",
-        xmin = response_start, xmax = response_end,
-        ymin = 0, ymax = Inf,
-        fill = "steelblue", alpha = 0.2
-      ) +
-      geom_line(
-        data = data_epi_curve %>%
-          filter(measure == m),
-        aes(time, value, group = tag),
-        alpha = 0.8, linewidth = 0.2
-      ) +
-      geom_lineribbon(
-        data = data_epi_curve_summary %>%
-          filter(measure == m),
-        aes(time, value, ymin = .lower, ymax = .upper),
-        col = "black",
-        alpha = 0.8
-      ) +
-      geom_vline(
-        xintercept = day_now,
-        col = "red", linetype = "dashed"
-      ) +
-      facet_grid(
-        cols = vars(response),
-        rows = vars(measure),
-        labeller = labeller(
-          measure = summary_measure_labels,
-          response = response_labels
-        ),
-        scales = "free"
-      ) +
-      scale_fill_viridis_d(
-        begin = 0.1, direction = -1,
-        labels = function(x) {
-          scales::percent(as.numeric(x))
-        }
-      ) +
-      scale_y_continuous(
-        labels = scales::comma
-      ) +
-      xlim(day_zero, horizon) +
-      labs(
-        x = x_label_days,
-        y = l,
-        fill = "Proj. interv."
-      ) +
-      theme_bw(base_size = 24, base_family = "Arial") +
-      fn_theme()
-
-    if (m == "total_hosp") {
-      plot_epi_curves <- plot_epi_curves +
-        geom_hline(
-          yintercept = hosp_capacity,
-          col = "red", linetype = "dashed"
-        )
-    }
-
-    plot_epi_curves
-  }
-)
-```
-
-## New cases {.smaller}
-
-```{r}
-plots_epi_curves$daily_infections
-```
-
-## New hospital admissions {.smaller}
-
-```{r}
-plots_epi_curves$daily_hospitalisations
-```
-
-## Hospital occupancy {.smaller}
-
-```{r}
-plots_epi_curves$total_hosp
-```
-
-## New deaths
-
-```{r}
-plots_epi_curves$daily_deaths
-```
-
-## Cumulative summary
-
-```{r echo=FALSE}
-summary_measure_labels <- c(
-  epidemic_size = "Cumulative infections",
-  total_deaths = "Cumulative deaths"
-)
-```
-
-```{r}
-ggplot(
-  data_epi_summary %>%
-    filter(measure != "total_hospitalisations")
-) +
-  stat_interval(
-    aes(
-      y = value,
-      color = after_stat(
-        level
-      )
-    ),
-    .width = c(0.5, 0.95),
-    linewidth = 30, alpha = 0.8,
-    normalize = "groups"
-  ) +
-  stat_pointinterval(
-    aes(y = value),
-    .width = c(0.5, 0.95)
-  ) +
-  facet_grid(
-    cols = vars(response),
-    rows = vars(measure),
-    labeller = labeller(
-      measure = summary_measure_labels,
-      response = response_labels
-    ),
-    scales = "free"
-  ) +
-  scale_y_continuous(
-    labels = scales::comma
-  ) +
-  scale_colour_viridis_d(
-    begin = 0.1, direction = -1,
-    labels = function(x) {
-      scales::percent(as.numeric(x))
-    }
-  ) +
-  labs(
-    x = NULL,
-    y = "Count",
-    colour = "Proj. interv."
-  ) +
-  guides(
-    colour = guide_legend(
-      override.aes = list(linewidth = 3)
-    )
-  ) +
-  theme_bw(base_size = 24, base_family = "Arial") +
-  fn_theme() +
-  theme(axis.text.x = element_blank())
-```
-
-## Deaths by age group
-
-```{r}
-ggplot(data_deaths) +
-  stat_interval(
-    aes(
-      forcats::fct_relevel(
-        age_group,
-        c("0-4", "5-19", "20-65", "65+")
-      ),
-      y = value,
-      color = after_stat(
-        level
-      )
-    ),
-    .width = c(0.5, 0.95),
-    linewidth = 30, alpha = 0.8,
-    normalize = "groups"
-  ) +
-  stat_pointinterval(
-    aes(age_group, y = value),
-    .width = c(0.5, 0.95),
-  ) +
-  facet_grid(
-    cols = vars(response),
-    # rows = vars(measure),
-    labeller = labeller(
-      measure = summary_measure_labels,
-      response = response_labels
-    ),
-    scales = "free"
-  ) +
-  scale_y_continuous(
-    labels = scales::comma
-  ) +
-  scale_colour_viridis_d(
-    begin = 0.1, direction = -1,
-    labels = function(x) {
-      scales::percent(as.numeric(x))
-    }
-  ) +
-  labs(
-    y = "Cumulative deaths",
-    x = "Age group",
-    colour = "Proj. interv."
-  ) +
-  guides(
-    colour = guide_legend(
-      override.aes = list(linewidth = 3)
-    )
-  ) +
-  theme_bw(
-    base_size = 24, base_family = "Arial"
-  ) +
-  fn_theme()
-```
-
-## Economic losses {.smaller}
-
-```{r echo=FALSE}
-loss_measure_labels <- c(
-  "GVA", "Future earnings", "Life years"
-)
-```
-
-```{r}
-ggplot(data_cost_output) +
-  stat_interval(
-    aes(
-      x = domain, y = cost,
-      color = after_stat(
-        level
-      )
-    ),
-    .width = c(0.5, 0.95),
-    linewidth = 30, alpha = 0.8,
-    normalize = "groups"
-  ) +
-  stat_pointinterval(
-    aes(domain, cost),
-    .width = c(0.5, 0.95),
-  ) +
-  facet_grid(
-    cols = vars(response),
-    # rows = vars(measure),
-    labeller = labeller(
-      measure = summary_measure_labels,
-      response = response_labels
-    ),
-    scales = "free"
-  ) +
-  scale_x_discrete(
-    labels = loss_measure_labels
-  ) +
-  scale_y_continuous(
-    labels = scales::label_currency(
-      scale = 0.7e-3, prefix = "£", suffix = " B", accuracy = 1
     )
   ) +
   scale_colour_viridis_d(
