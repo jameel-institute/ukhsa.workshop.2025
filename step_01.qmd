@@ -368,7 +368,8 @@ plot_daily_cases_unmit_explainer <-
 
 ggsave(
   "figures/plot_unmit_daily_cases_explainer.png",
-  plot_daily_cases_unmit_explainer
+  plot_daily_cases_unmit_explainer,
+  height = 7, width = 10
 )
 ```
 
@@ -1329,6 +1330,8 @@ ggsave(
 
 ```{r}
 data_cost_output %>%
+  # scale to GBP
+  mutate(cost = cost * 0.7) %>% 
   group_by(response, domain) %>%
   reframe(fn_qtl(cost)) %>%
   mutate(
@@ -1443,6 +1446,8 @@ ggsave(
 
 ```{r}
 data_econ_costs %>%
+  # scale to GBP
+  mutate(cost = cost * 0.7) %>% 
   group_by(response, cost_type) %>%
   reframe(fn_qtl(cost)) %>%
   mutate(
