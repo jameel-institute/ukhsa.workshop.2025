@@ -436,7 +436,7 @@ plot_daily_cases_unmit <-
   labs(
     x = x_label_days,
     y = "New detected cases",
-    caption = "Projection includes some under-ascertainment.",
+    caption = "Please consider that there is under-ascertainment.",
     fill = "Proj. interv."
   ) +
   xlim(20, 60) +
@@ -491,7 +491,7 @@ Map(
         x = x_label_days,
         y = l,
         fill = "Proj. interv.",
-        caption = "Projection includes some under-ascertainment."
+        caption = "Please consider that there is under-ascertainment."
       ) +
       xlim(20, 60) +
       theme_bw(base_size = 24, base_family = "Arial") +
@@ -571,7 +571,7 @@ plot_unmit_epi_summary <-
     x = NULL,
     y = "Count (up to day 60)",
     colour = "Proj. interv.",
-    caption = "Projection includes some under-ascertainment.",
+    caption = "Please consider that there is under-ascertainment.",
   ) +
   guides(
     colour = guide_legend(
@@ -626,7 +626,7 @@ plot_unmit_deaths_by_age <-
     y = "Cumulative deaths (up to day 60)",
     x = "Age group",
     colour = "Proj. interv.",
-    caption = "Projection includes some under-ascertainment."
+    caption = "Please consider that there is under-ascertainment."
   ) +
   guides(
     colour = guide_legend(
@@ -681,7 +681,8 @@ plot_cfr_by_age <-
   labs(
     y = "CFR (naive)",
     x = "Age group",
-    colour = "Proj. interv."
+    colour = "Proj. interv.",
+    caption = "Please consider that there is under-ascertainment."
   ) +
   guides(
     colour = guide_legend(
@@ -833,7 +834,11 @@ Map(
       labs(
         x = x_label_days,
         y = l,
-        fill = "Proj. interv."
+        fill = "Proj. interv.",
+        caption = glue::glue(
+          "Please consider that there is under-ascertainment.
+          S = school closures; B = business closures."
+        )
       ) +
       xlim(20, 60) +
       theme_bw(base_size = 24, base_family = "Arial") +
@@ -909,7 +914,11 @@ Map(
       labs(
         x = x_label_days,
         y = l,
-        fill = "Proj. interv."
+        fill = "Proj. interv.",
+        caption = glue::glue(
+          "Please consider that there is under-ascertainment.
+          S = school closures; B = business closures."
+        )
       ) +
       xlim(20, 60) +
       theme_bw(base_size = 24, base_family = "Arial") +
@@ -993,7 +1002,11 @@ plot_compare_epi_summary <-
   labs(
     x = NULL,
     y = "Count",
-    colour = "Proj. interval"
+    colour = "Proj. interval",
+    caption = glue::glue(
+          "Please consider that there is under-ascertainment.
+          S = school closures; B = business closures."
+        )
   ) +
   guides(
     colour = guide_legend(
@@ -1079,7 +1092,11 @@ plot_compare_deaths_by_age <-
   labs(
     y = "Cumulative deaths",
     x = NULL,
-    colour = "Proj. interval"
+    colour = "Proj. interval",
+    caption = glue::glue(
+      "Please consider that there is under-ascertainment.
+      S = school closures; B = business closures."
+    )
   ) +
   guides(
     colour = guide_legend(
@@ -1141,7 +1158,11 @@ plot_compare_deaths_by_age <-
   labs(
     y = "Cumulative deaths",
     x = NULL,
-    colour = "Proj. interval"
+    colour = "Proj. interval",
+    caption = glue::glue(
+      "Please consider that there is under-ascertainment.
+      S = school closures; B = business closures."
+    )
   ) +
   guides(
     colour = guide_legend(
